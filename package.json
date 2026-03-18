@@ -4,7 +4,7 @@
   "description": "- Ett GitHub-konto (gratis fungerar – du får 120 timmar Codespaces/månad) - En webbläsare (inget behöver installeras lokalt på din dator)",
   "main": "index.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview"
   },
