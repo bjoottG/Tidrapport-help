@@ -161,7 +161,11 @@ export default function App() {
   const [selectedYear, setSelectedYear] = useState(defaultWeek.year);
   const [selectedWeek, setSelectedWeek] = useState(defaultWeek.week);
   const [totalHours, setTotalHours] = useState(40);
-  const [workAreas, setWorkAreas] = useState<WorkArea[]>([]);
+  const [workAreas, setWorkAreas] = useState<WorkArea[]>([
+    { id: crypto.randomUUID(), code: "102653", description: "", percentage: 40 },
+    { id: crypto.randomUUID(), code: "101124", description: "", percentage: 20 },
+    { id: crypto.randomUUID(), code: "300292", description: "", percentage: 40 },
+  ]);
   const [dayTypes, setDayTypes] = useState<DayType[]>(() => {
     const monday = getMondayForISOWeek(defaultWeek.year, defaultWeek.week);
     return getInitialDayTypes(getWeekDays(monday));
