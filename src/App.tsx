@@ -22,12 +22,6 @@ interface WorkArea {
 type DayType = "normal" | "helgdag" | "halvHelgdag";
 
 const DAY_NAMES = ["Mån", "Tis", "Ons", "Tor", "Fre"];
-const DAY_WEIGHTS: Record<DayType, number> = {
-  normal: 1,
-  halvHelgdag: 0.5,
-  helgdag: 0,
-};
-
 // ── Date utilities ────────────────────────────────────────
 
 function getISOWeekInfo(date: Date): { week: number; year: number } {
@@ -160,7 +154,6 @@ export default function App() {
 
   const [selectedYear, setSelectedYear] = useState(defaultWeek.year);
   const [selectedWeek, setSelectedWeek] = useState(defaultWeek.week);
-  const [totalHours, setTotalHours] = useState(40);
   const [workAreas, setWorkAreas] = useState<WorkArea[]>([
     { id: crypto.randomUUID(), code: "102653", description: "", percentage: 40 },
     { id: crypto.randomUUID(), code: "101124", description: "", percentage: 20 },
@@ -220,14 +213,13 @@ export default function App() {
     (s, v, i) => s + (dayTypes[i] === "helgdag" ? 0 : v),
     0
   );
-  const availableHours = Math.max(0, totalHours - friskvardTotal - franvaroTotal);
 
-  const dayWeights = dayTypes.map((t) => DAY_WEIGHTS[t]);
-  const totalWeight = dayWeights.reduce((s, w) => s + w, 0);
+  const DAY_BASE_HOURS: Record<DayType, number> = { normal: 8, halvHelgdag: 4, helgdag: 0 };
 
   function calcDayHours(percentage: number, dayIdx: number): number {
-    if (totalWeight === 0) return 0;
-    return (availableHours * (percentage / 100) * dayWeights[dayIdx]) / totalWeight;
+    const base = DAY_BASE_HOURS[dayTypes[dayIdx]];
+    const available = Math.max(0, base - friskvard[dayIdx] - franvaro[dayIdx]);
+    return available * (percentage / 100);
   }
 
   const dayTotals = [0, 1, 2, 3, 4].map((i) => {
@@ -275,22 +267,6 @@ export default function App() {
 
       {/* ── Setup ─────────────────────────────────────────────── */}
       <div className="space-y-6">
-        {/* Total hours */}
-        <div className="flex items-center gap-3">
-          <Label htmlFor="totalHours" className="text-sm font-medium whitespace-nowrap">
-            Totalt antal timmar per vecka
-          </Label>
-          <Input
-            id="totalHours"
-            type="number"
-            min={0}
-            max={40}
-            value={totalHours}
-            onChange={(e) => setTotalHours(Math.min(40, Math.max(0, Number(e.target.value))))}
-            className="w-24"
-          />
-        </div>
-
         {/* Work areas */}
         <div>
           <h2 className="text-base font-semibold mb-2">Arbetsområden</h2>
