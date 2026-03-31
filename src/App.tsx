@@ -28,14 +28,31 @@ const DAY_WEIGHTS: Record<DayType, number> = {
   helgdag: 0,
 };
 
-function getWeekMonday(weekOffset: number): Date {
-  const today = new Date();
-  const dow = today.getDay();
-  const diffToMon = dow === 0 ? -6 : 1 - dow;
-  const monday = new Date(today);
-  monday.setDate(today.getDate() + diffToMon + weekOffset * 7);
+// ── Date utilities ────────────────────────────────────────
+
+function getISOWeekInfo(date: Date): { week: number; year: number } {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dow = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dow);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return { week, year: d.getUTCFullYear() };
+}
+
+function getMondayForISOWeek(year: number, week: number): Date {
+  const jan4 = new Date(year, 0, 4);
+  const dow = jan4.getDay() || 7;
+  const week1Mon = new Date(jan4);
+  week1Mon.setDate(jan4.getDate() - (dow - 1));
+  const monday = new Date(week1Mon);
+  monday.setDate(week1Mon.getDate() + (week - 1) * 7);
   monday.setHours(0, 0, 0, 0);
   return monday;
+}
+
+function getISOWeeksInYear(year: number): number {
+  const dec28 = new Date(year, 11, 28);
+  return getISOWeekInfo(dec28).week;
 }
 
 function getWeekDays(monday: Date): Date[] {
@@ -52,26 +69,141 @@ function formatDate(date: Date): string {
   return `${mm}-${dd}`;
 }
 
-function getWeekNumber(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dow = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dow);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+function dateToKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+// ── Swedish public holidays ───────────────────────────────
+
+function getEaster(year: number): Date {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31) - 1;
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(year, month, day);
+}
+
+function addDays(date: Date, days: number): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function getSwedishHolidays(year: number): Record<string, string> {
+  const holidays: Record<string, string> = {};
+  const add = (date: Date, name: string) => {
+    holidays[dateToKey(date)] = name;
+  };
+
+  // Fixed holidays
+  add(new Date(year, 0, 1), "Nyårsdagen");
+  add(new Date(year, 0, 6), "Trettondedag jul");
+  add(new Date(year, 4, 1), "Första maj");
+  add(new Date(year, 5, 6), "Nationaldagen");
+  add(new Date(year, 11, 25), "Juldagen");
+  add(new Date(year, 11, 26), "Annandag jul");
+
+  // Easter-based
+  const easter = getEaster(year);
+  add(addDays(easter, -2), "Långfredag");
+  add(easter, "Påskdagen");
+  add(addDays(easter, 1), "Annandag påsk");
+  add(addDays(easter, 39), "Kristi himmelsfärdsdag");
+  add(addDays(easter, 49), "Pingstdagen");
+
+  // Midsommardagen: first Saturday on/after Jun 20
+  const midsommar = new Date(year, 5, 20);
+  while (midsommar.getDay() !== 6) midsommar.setDate(midsommar.getDate() + 1);
+  add(midsommar, "Midsommardagen");
+
+  // Alla helgons dag: first Saturday on/after Oct 31
+  const allaSaints = new Date(year, 10, 31);
+  while (allaSaints.getDay() !== 6) allaSaints.setDate(allaSaints.getDate() + 1);
+  add(allaSaints, "Alla helgons dag");
+
+  return holidays;
+}
+
+function buildHolidayMap(days: Date[]): Record<string, string> {
+  const years = [...new Set(days.map((d) => d.getFullYear()))];
+  const map: Record<string, string> = {};
+  years.forEach((y) => Object.assign(map, getSwedishHolidays(y)));
+  return map;
+}
+
+function getInitialDayTypes(days: Date[]): DayType[] {
+  const map = buildHolidayMap(days);
+  return days.map((d) => (map[dateToKey(d)] ? "helgdag" : "normal"));
+}
+
+function getPreviousWeek(): { week: number; year: number } {
+  const prev = new Date();
+  prev.setDate(prev.getDate() - 7);
+  return getISOWeekInfo(prev);
+}
+
+// ── Year range for dropdown ───────────────────────────────
+const YEAR_RANGE = Array.from({ length: 11 }, (_, i) => 2020 + i);
+
 export default function App() {
-  const [weekOffset, setWeekOffset] = useState(0);
+  const defaultWeek = getPreviousWeek();
+
+  const [selectedYear, setSelectedYear] = useState(defaultWeek.year);
+  const [selectedWeek, setSelectedWeek] = useState(defaultWeek.week);
   const [totalHours, setTotalHours] = useState(40);
   const [workAreas, setWorkAreas] = useState<WorkArea[]>([]);
-  const [dayTypes, setDayTypes] = useState<DayType[]>([
-    "normal", "normal", "normal", "normal", "normal",
-  ]);
+  const [dayTypes, setDayTypes] = useState<DayType[]>(() => {
+    const monday = getMondayForISOWeek(defaultWeek.year, defaultWeek.week);
+    return getInitialDayTypes(getWeekDays(monday));
+  });
   const [friskvard, setFriskvard] = useState<number[]>([0, 0, 0, 0, 0]);
   const [franvaro, setFranvaro] = useState<number[]>([0, 0, 0, 0, 0]);
 
-  const monday = getWeekMonday(weekOffset);
+  const monday = getMondayForISOWeek(selectedYear, selectedWeek);
   const weekDays = getWeekDays(monday);
+  const holidayMap = buildHolidayMap(weekDays);
+  const holidayNames = weekDays.map((d) => holidayMap[dateToKey(d)] || null);
+  const weeksInYear = getISOWeeksInYear(selectedYear);
+
+  function changeWeek(year: number, week: number) {
+    const newDays = getWeekDays(getMondayForISOWeek(year, week));
+    setSelectedYear(year);
+    setSelectedWeek(week);
+    setDayTypes(getInitialDayTypes(newDays));
+    setFriskvard([0, 0, 0, 0, 0]);
+    setFranvaro([0, 0, 0, 0, 0]);
+  }
+
+  function navigateWeek(delta: number) {
+    let newWeek = selectedWeek + delta;
+    let newYear = selectedYear;
+    if (newWeek < 1) {
+      newYear -= 1;
+      newWeek = getISOWeeksInYear(newYear);
+    } else if (newWeek > getISOWeeksInYear(newYear)) {
+      newYear += 1;
+      newWeek = 1;
+    }
+    changeWeek(newYear, newWeek);
+  }
+
+  function handleYearChange(year: number) {
+    const maxWeek = getISOWeeksInYear(year);
+    const week = Math.min(selectedWeek, maxWeek);
+    changeWeek(year, week);
+  }
+
+  // ── Calculations ─────────────────────────────────────────
 
   const percentageSum = workAreas.reduce((s, a) => s + a.percentage, 0);
   const percentageValid = workAreas.length === 0 || percentageSum === 100;
@@ -91,16 +223,18 @@ export default function App() {
 
   function calcDayHours(percentage: number, dayIdx: number): number {
     if (totalWeight === 0) return 0;
-    const weeklyHours = availableHours * (percentage / 100);
-    return (weeklyHours * dayWeights[dayIdx]) / totalWeight;
+    return (availableHours * (percentage / 100) * dayWeights[dayIdx]) / totalWeight;
   }
 
   const dayTotals = [0, 1, 2, 3, 4].map((i) => {
     if (dayTypes[i] === "helgdag") return 0;
-    const waHours = workAreas.reduce((s, wa) => s + calcDayHours(wa.percentage, i), 0);
-    return waHours + friskvard[i] + franvaro[i];
+    return workAreas.reduce((s, wa) => s + calcDayHours(wa.percentage, i), 0) +
+      friskvard[i] +
+      franvaro[i];
   });
   const grandTotal = dayTotals.reduce((s, v) => s + v, 0);
+
+  // ── Work area handlers ────────────────────────────────────
 
   function addWorkArea() {
     setWorkAreas((prev) => [
@@ -156,8 +290,7 @@ export default function App() {
         {/* Work areas */}
         <div>
           <h2 className="text-base font-semibold mb-2">Arbetsområden</h2>
-
-<div className="border rounded-md overflow-hidden">
+          <div className="border rounded-md overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-muted">
                 <tr>
@@ -217,10 +350,7 @@ export default function App() {
                 ))}
                 {workAreas.length === 0 && (
                   <tr>
-                    <td
-                      colSpan={4}
-                      className="px-3 py-4 text-center text-muted-foreground text-sm"
-                    >
+                    <td colSpan={4} className="px-3 py-4 text-center text-muted-foreground text-sm">
                       Inga arbetsområden tillagda
                     </td>
                   </tr>
@@ -250,25 +380,59 @@ export default function App() {
 
       {/* ── Result table ──────────────────────────────────────── */}
       <div>
-        <div className="flex items-center gap-3 mb-3">
+        <div className="flex items-center gap-3 mb-3 flex-wrap">
           <h2 className="text-base font-semibold">Tidtransaktioner</h2>
+
+          {/* Week navigation */}
           <div className="flex items-center gap-1">
             <Button
               variant="outline"
               size="icon"
               className="h-7 w-7"
-              onClick={() => setWeekOffset((w) => w - 1)}
+              onClick={() => navigateWeek(-1)}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="text-sm px-2 min-w-24 text-center">
-              v.{getWeekNumber(monday)} {monday.getFullYear()}
-            </span>
+
+            {/* Week dropdown */}
+            <Select
+              value={String(selectedWeek)}
+              onValueChange={(v) => changeWeek(selectedYear, Number(v))}
+            >
+              <SelectTrigger className="h-7 text-sm w-24">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Array.from({ length: weeksInYear }, (_, i) => i + 1).map((w) => (
+                  <SelectItem key={w} value={String(w)}>
+                    Vecka {w}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Year dropdown */}
+            <Select
+              value={String(selectedYear)}
+              onValueChange={(v) => handleYearChange(Number(v))}
+            >
+              <SelectTrigger className="h-7 text-sm w-24">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {YEAR_RANGE.map((y) => (
+                  <SelectItem key={y} value={String(y)}>
+                    {y}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             <Button
               variant="outline"
               size="icon"
               className="h-7 w-7"
-              onClick={() => setWeekOffset((w) => w + 1)}
+              onClick={() => navigateWeek(1)}
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
@@ -280,10 +444,7 @@ export default function App() {
             <thead>
               {/* Day type selector row */}
               <tr className="bg-muted/40 border-b">
-                <td
-                  colSpan={3}
-                  className="px-3 py-1 text-xs text-muted-foreground"
-                >
+                <td colSpan={3} className="px-3 py-1 text-xs text-muted-foreground">
                   Dagtyp
                 </td>
                 {weekDays.map((_, i) => (
@@ -308,12 +469,8 @@ export default function App() {
 
               {/* Column header row */}
               <tr className="bg-muted border-b">
-                <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">
-                  Tidkod
-                </th>
-                <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">
-                  Arbetsområde
-                </th>
+                <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Tidkod</th>
+                <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Arbetsområde</th>
                 <th className="text-left px-3 py-2 font-semibold">Beskrivning</th>
                 {weekDays.map((d, i) => (
                   <th
@@ -327,6 +484,14 @@ export default function App() {
                     {DAY_NAMES[i]}
                     <br />
                     <span className="font-normal text-xs">{formatDate(d)}</span>
+                    {holidayNames[i] && (
+                      <>
+                        <br />
+                        <span className="font-normal text-xs text-red-500 italic">
+                          {holidayNames[i]}
+                        </span>
+                      </>
+                    )}
                   </th>
                 ))}
                 <th className="text-right px-3 py-2 font-semibold">Sum</th>
@@ -344,12 +509,12 @@ export default function App() {
                     key={i}
                     className={cn(
                       "px-1 py-1",
-                      dayTypes[i] === "helgdag" && "bg-green-400",
-                      dayTypes[i] === "halvHelgdag" && "bg-green-100"
+                      dayTypes[i] === "helgdag" && "bg-red-100",
+                      dayTypes[i] === "halvHelgdag" && "bg-amber-50"
                     )}
                   >
                     {dayTypes[i] === "helgdag" ? (
-                      <div className="text-right px-2 text-sm font-mono">0,00</div>
+                      <div className="text-right px-2 text-sm font-mono text-red-400">Helgdag</div>
                     ) : (
                       <Input
                         type="number"
@@ -377,12 +542,12 @@ export default function App() {
                     key={i}
                     className={cn(
                       "px-1 py-1",
-                      dayTypes[i] === "helgdag" && "bg-green-400",
-                      dayTypes[i] === "halvHelgdag" && "bg-green-100"
+                      dayTypes[i] === "helgdag" && "bg-red-100",
+                      dayTypes[i] === "halvHelgdag" && "bg-amber-50"
                     )}
                   >
                     {dayTypes[i] === "helgdag" ? (
-                      <div className="text-right px-2 text-sm font-mono">0,00</div>
+                      <div className="text-right px-2 text-sm font-mono text-red-400">Helgdag</div>
                     ) : (
                       <Input
                         type="number"
@@ -402,9 +567,7 @@ export default function App() {
 
               {/* Work area rows */}
               {workAreas.map((area) => {
-                const dayHours = [0, 1, 2, 3, 4].map((i) =>
-                  calcDayHours(area.percentage, i)
-                );
+                const dayHours = [0, 1, 2, 3, 4].map((i) => calcDayHours(area.percentage, i));
                 const weekTotal = dayHours.reduce((s, v) => s + v, 0);
                 return (
                   <tr key={area.id} className="border-b">
@@ -416,11 +579,11 @@ export default function App() {
                         key={i}
                         className={cn(
                           "px-3 py-2 text-right font-mono text-sm",
-                          dayTypes[i] === "helgdag" && "bg-green-400",
-                          dayTypes[i] === "halvHelgdag" && "bg-green-100"
+                          dayTypes[i] === "helgdag" && "bg-red-100 text-red-400",
+                          dayTypes[i] === "halvHelgdag" && "bg-amber-50"
                         )}
                       >
-                        {h.toFixed(2).replace(".", ",")}
+                        {dayTypes[i] === "helgdag" ? "Helgdag" : h.toFixed(2).replace(".", ",")}
                       </td>
                     ))}
                     <td className="px-3 py-2 text-right font-mono text-sm">
@@ -432,10 +595,7 @@ export default function App() {
 
               {workAreas.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={9}
-                    className="px-3 py-4 text-center text-muted-foreground text-sm"
-                  >
+                  <td colSpan={9} className="px-3 py-4 text-center text-muted-foreground text-sm">
                     Lägg till arbetsområden ovan för att se beräknade timmar
                   </td>
                 </tr>
