@@ -489,12 +489,12 @@ export default function App() {
                     key={i}
                     className={cn(
                       "px-1 py-1",
-                      dayTypes[i] === "helgdag" && "bg-red-100",
+                      dayTypes[i] === "helgdag" && "bg-green-500",
                       dayTypes[i] === "halvHelgdag" && "bg-amber-50"
                     )}
                   >
                     {dayTypes[i] === "helgdag" ? (
-                      <div className="text-right px-2 text-sm font-mono text-red-400">Helgdag</div>
+                      <div className="text-right px-2 text-sm font-mono text-white">0,00</div>
                     ) : (
                       <Input
                         type="number"
@@ -522,12 +522,12 @@ export default function App() {
                     key={i}
                     className={cn(
                       "px-1 py-1",
-                      dayTypes[i] === "helgdag" && "bg-red-100",
+                      dayTypes[i] === "helgdag" && "bg-green-500",
                       dayTypes[i] === "halvHelgdag" && "bg-amber-50"
                     )}
                   >
                     {dayTypes[i] === "helgdag" ? (
-                      <div className="text-right px-2 text-sm font-mono text-red-400">Helgdag</div>
+                      <div className="text-right px-2 text-sm font-mono text-white">0,00</div>
                     ) : (
                       <Input
                         type="number"
@@ -559,11 +559,11 @@ export default function App() {
                         key={i}
                         className={cn(
                           "px-3 py-2 text-right font-mono text-sm",
-                          dayTypes[i] === "helgdag" && "bg-red-100 text-red-400",
+                          dayTypes[i] === "helgdag" && "bg-green-500 text-white",
                           dayTypes[i] === "halvHelgdag" && "bg-amber-50"
                         )}
                       >
-                        {dayTypes[i] === "helgdag" ? "Helgdag" : h.toFixed(2).replace(".", ",")}
+                        {h.toFixed(2).replace(".", ",")}
                       </td>
                     ))}
                     <td className="px-3 py-2 text-right font-mono text-sm">
