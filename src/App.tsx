@@ -379,7 +379,7 @@ export default function App() {
               value={String(selectedWeek)}
               onValueChange={(v) => changeWeek(selectedYear, Number(v))}
             >
-              <SelectTrigger className="h-7 text-sm w-24">
+              <SelectTrigger className="h-7 text-sm w-28">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
