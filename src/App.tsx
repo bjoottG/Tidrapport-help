@@ -170,6 +170,7 @@ export default function App() {
   });
   const [friskvard, setFriskvard] = useState<number[]>([0, 0, 0, 0, 0]);
   const [franvaro, setFranvaro] = useState<number[]>([0, 0, 0, 0, 0]);
+  const [flexUt, setFlexUt] = useState<number[]>([0, 0, 0, 0, 0]);
 
   const monday = getMondayForISOWeek(selectedYear, selectedWeek);
   const weekDays = getWeekDays(monday);
@@ -186,6 +187,7 @@ export default function App() {
     setWorkedHours(newTypes.map((t) => DAY_BASE_HOURS[t]));
     setFriskvard([0, 0, 0, 0, 0]);
     setFranvaro([0, 0, 0, 0, 0]);
+    setFlexUt([0, 0, 0, 0, 0]);
   }
 
   function navigateWeek(delta: number) {
@@ -222,16 +224,17 @@ export default function App() {
   );
 
   function calcDayHours(percentage: number, dayIdx: number): number {
-    const available = Math.max(0, workedHours[dayIdx] - friskvard[dayIdx] - franvaro[dayIdx]);
+    const available = Math.max(
+      0,
+      workedHours[dayIdx] - friskvard[dayIdx] - franvaro[dayIdx] - flexUt[dayIdx]
+    );
     return available * (percentage / 100);
   }
 
-  // Flex (uttag): hours below the day's base that are covered by flex
-  const flexHours = [0, 1, 2, 3, 4].map((i) => {
-    if (dayTypes[i] === "helgdag") return 0;
-    return Math.max(0, DAY_BASE_HOURS[dayTypes[i]] - workedHours[i]);
-  });
-  const flexTotal = flexHours.reduce((s, v) => s + v, 0);
+  const flexTotal = flexUt.reduce(
+    (s, v, i) => s + (dayTypes[i] === "helgdag" ? 0 : v),
+    0
+  );
 
   const workedTotal = workedHours.reduce(
     (s, v, i) => s + (dayTypes[i] === "helgdag" ? 0 : v),
@@ -243,7 +246,7 @@ export default function App() {
     return workAreas.reduce((s, wa) => s + calcDayHours(wa.percentage, i), 0) +
       friskvard[i] +
       franvaro[i] +
-      flexHours[i];
+      flexUt[i];
   });
   const grandTotal = dayTotals.reduce((s, v) => s + v, 0);
 
@@ -283,6 +286,10 @@ export default function App() {
 
   function updateFranvaro(idx: number, value: number) {
     setFranvaro((prev) => prev.map((v, i) => (i === idx ? value : v)));
+  }
+
+  function updateFlexUt(idx: number, value: number) {
+    setFlexUt((prev) => prev.map((v, i) => (i === idx ? value : v)));
   }
 
   return (
@@ -598,21 +605,32 @@ export default function App() {
                 </td>
               </tr>
 
-              {/* Flex (auto: base hours minus worked hours when working less) */}
+              {/* Flex uttag */}
               <tr className="border-b">
                 <td className="px-3 py-1 text-muted-foreground">0</td>
-                <td className="px-3 py-1 font-mono text-xs">FLEX</td>
-                <td className="px-3 py-1">Flex</td>
-                {flexHours.map((v, i) => (
+                <td className="px-3 py-1 font-mono text-xs">FLEXUT</td>
+                <td className="px-3 py-1">Flex uttag</td>
+                {flexUt.map((v, i) => (
                   <td
                     key={i}
                     className={cn(
-                      "px-3 py-1 text-right font-mono text-sm",
-                      dayTypes[i] === "helgdag" && "bg-green-500 text-white",
+                      "px-1 py-1",
+                      dayTypes[i] === "helgdag" && "bg-green-500",
                       dayTypes[i] === "halvHelgdag" && "bg-amber-50"
                     )}
                   >
-                    {v.toFixed(2).replace(".", ",")}
+                    {dayTypes[i] === "helgdag" ? (
+                      <div className="text-right px-2 text-sm font-mono text-white">0,00</div>
+                    ) : (
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.25}
+                        value={v}
+                        onChange={(e) => updateFlexUt(i, Number(e.target.value))}
+                        className="h-7 text-right w-full font-mono text-xs"
+                      />
+                    )}
                   </td>
                 ))}
                 <td className="px-3 py-1 text-right font-mono text-sm">
