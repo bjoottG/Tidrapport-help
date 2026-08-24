@@ -22,6 +22,7 @@ interface WorkArea {
 type DayType = "normal" | "helgdag" | "halvHelgdag";
 
 const DAY_NAMES = ["Mån", "Tis", "Ons", "Tor", "Fre"];
+const DAY_BASE_HOURS: Record<DayType, number> = { normal: 8, halvHelgdag: 4, helgdag: 0 };
 // ── Date utilities ────────────────────────────────────────
 
 function getISOWeekInfo(date: Date): { week: number; year: number } {
@@ -163,6 +164,10 @@ export default function App() {
     const monday = getMondayForISOWeek(defaultWeek.year, defaultWeek.week);
     return getInitialDayTypes(getWeekDays(monday));
   });
+  const [workedHours, setWorkedHours] = useState<number[]>(() => {
+    const monday = getMondayForISOWeek(defaultWeek.year, defaultWeek.week);
+    return getInitialDayTypes(getWeekDays(monday)).map((t) => DAY_BASE_HOURS[t]);
+  });
   const [friskvard, setFriskvard] = useState<number[]>([0, 0, 0, 0, 0]);
   const [franvaro, setFranvaro] = useState<number[]>([0, 0, 0, 0, 0]);
 
@@ -174,9 +179,11 @@ export default function App() {
 
   function changeWeek(year: number, week: number) {
     const newDays = getWeekDays(getMondayForISOWeek(year, week));
+    const newTypes = getInitialDayTypes(newDays);
     setSelectedYear(year);
     setSelectedWeek(week);
-    setDayTypes(getInitialDayTypes(newDays));
+    setDayTypes(newTypes);
+    setWorkedHours(newTypes.map((t) => DAY_BASE_HOURS[t]));
     setFriskvard([0, 0, 0, 0, 0]);
     setFranvaro([0, 0, 0, 0, 0]);
   }
@@ -214,19 +221,29 @@ export default function App() {
     0
   );
 
-  const DAY_BASE_HOURS: Record<DayType, number> = { normal: 8, halvHelgdag: 4, helgdag: 0 };
-
   function calcDayHours(percentage: number, dayIdx: number): number {
-    const base = DAY_BASE_HOURS[dayTypes[dayIdx]];
-    const available = Math.max(0, base - friskvard[dayIdx] - franvaro[dayIdx]);
+    const available = Math.max(0, workedHours[dayIdx] - friskvard[dayIdx] - franvaro[dayIdx]);
     return available * (percentage / 100);
   }
+
+  // Flex (uttag): hours below the day's base that are covered by flex
+  const flexHours = [0, 1, 2, 3, 4].map((i) => {
+    if (dayTypes[i] === "helgdag") return 0;
+    return Math.max(0, DAY_BASE_HOURS[dayTypes[i]] - workedHours[i]);
+  });
+  const flexTotal = flexHours.reduce((s, v) => s + v, 0);
+
+  const workedTotal = workedHours.reduce(
+    (s, v, i) => s + (dayTypes[i] === "helgdag" ? 0 : v),
+    0
+  );
 
   const dayTotals = [0, 1, 2, 3, 4].map((i) => {
     if (dayTypes[i] === "helgdag") return 0;
     return workAreas.reduce((s, wa) => s + calcDayHours(wa.percentage, i), 0) +
       friskvard[i] +
-      franvaro[i];
+      franvaro[i] +
+      flexHours[i];
   });
   const grandTotal = dayTotals.reduce((s, v) => s + v, 0);
 
@@ -251,6 +268,13 @@ export default function App() {
 
   function setDayType(idx: number, value: DayType) {
     setDayTypes((prev) => prev.map((t, i) => (i === idx ? value : t)));
+    setWorkedHours((prev) =>
+      prev.map((v, i) => (i === idx ? DAY_BASE_HOURS[value] : v))
+    );
+  }
+
+  function updateWorkedHours(idx: number, value: number) {
+    setWorkedHours((prev) => prev.map((v, i) => (i === idx ? value : v)));
   }
 
   function updateFriskvard(idx: number, value: number) {
@@ -447,6 +471,35 @@ export default function App() {
                 <td />
               </tr>
 
+              {/* Worked hours per day row */}
+              <tr className="bg-muted/40 border-b">
+                <td colSpan={3} className="px-3 py-1 text-xs text-muted-foreground">
+                  Arbetade timmar/dag
+                </td>
+                {weekDays.map((_, i) => (
+                  <td key={i} className="px-1 py-1">
+                    {dayTypes[i] === "helgdag" ? (
+                      <div className="text-right px-2 text-xs font-mono text-muted-foreground">
+                        —
+                      </div>
+                    ) : (
+                      <Input
+                        type="number"
+                        min={0}
+                        max={24}
+                        step={0.25}
+                        value={workedHours[i]}
+                        onChange={(e) => updateWorkedHours(i, Number(e.target.value))}
+                        className="h-7 text-right w-full font-mono text-xs"
+                      />
+                    )}
+                  </td>
+                ))}
+                <td className="px-3 py-1 text-right font-mono text-xs">
+                  {workedTotal.toFixed(2).replace(".", ",")}
+                </td>
+              </tr>
+
               {/* Column header row */}
               <tr className="bg-muted border-b">
                 <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Tidkod</th>
@@ -542,6 +595,28 @@ export default function App() {
                 ))}
                 <td className="px-3 py-1 text-right font-mono text-sm">
                   {franvaroTotal.toFixed(2).replace(".", ",")}
+                </td>
+              </tr>
+
+              {/* Flex (auto: base hours minus worked hours when working less) */}
+              <tr className="border-b">
+                <td className="px-3 py-1 text-muted-foreground">0</td>
+                <td className="px-3 py-1 font-mono text-xs">FLEX</td>
+                <td className="px-3 py-1">Flex</td>
+                {flexHours.map((v, i) => (
+                  <td
+                    key={i}
+                    className={cn(
+                      "px-3 py-1 text-right font-mono text-sm",
+                      dayTypes[i] === "helgdag" && "bg-green-500 text-white",
+                      dayTypes[i] === "halvHelgdag" && "bg-amber-50"
+                    )}
+                  >
+                    {v.toFixed(2).replace(".", ",")}
+                  </td>
+                ))}
+                <td className="px-3 py-1 text-right font-mono text-sm">
+                  {flexTotal.toFixed(2).replace(".", ",")}
                 </td>
               </tr>
 
