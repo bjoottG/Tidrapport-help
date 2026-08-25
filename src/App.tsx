@@ -203,16 +203,30 @@ const FILL_SCRIPT_TEMPLATE = String.raw`(async function () {
     var th = grid.querySelector('th[data-fieldname="' + field + '"]');
     return th ? th.cellIndex : -1;
   }
+  function cellMatches(td, code) {
+    if (!td) return false;
+    var text = (td.textContent || "").trim();
+    var title = (td.getAttribute("title") || "").trim();
+    if (text === code || title === code || title.endsWith("- " + code)) return true;
+    // Row in edit mode: the code sits in an editor input or hidden RowValue
+    var inputs = td.querySelectorAll("input");
+    for (var j = 0; j < inputs.length; j++) {
+      if ((inputs[j].value || "").trim() === code) return true;
+    }
+    return false;
+  }
   function findRow(grid, code) {
     var pi = colIndex(grid, "project");
     var rows = Array.prototype.slice.call(grid.querySelectorAll("tr"));
     for (var i = 0; i < rows.length; i++) {
       if (!/row\d+$/.test(rows[i].id)) continue;
-      var td = rows[i].cells[pi];
-      if (!td) continue;
-      var text = (td.textContent || "").trim();
-      var title = (td.getAttribute("title") || "").trim();
-      if (text === code || title === code || title.endsWith("- " + code)) return rows[i];
+      if (cellMatches(rows[i].cells[pi], code)) return rows[i];
+      // Fallback: any input in the row holding exactly the code (edit mode
+      // where cell indexes shift)
+      var inputs = rows[i].querySelectorAll("input");
+      for (var j = 0; j < inputs.length; j++) {
+        if ((inputs[j].value || "").trim() === code) return rows[i];
+      }
     }
     return null;
   }
@@ -258,8 +272,12 @@ const FILL_SCRIPT_TEMPLATE = String.raw`(async function () {
     var tr = findRow(grid, rowData.code);
     if (!tr) fail("Raden " + rowData.code + " gick inte att hitta efter omladdning.");
     var uid = tr.id.replace(/_/g, "$");
-    log("Rad " + (n + 1) + "/" + DATA.rows.length + ": öppnar " + rowData.code + " för redigering …");
-    ctx.win.PostBack(uid + "$_edit", "reg_value1");
+    if (ctx.doc.getElementsByName(uid + "$reg_value1$i")[0]) {
+      log("Rad " + (n + 1) + "/" + DATA.rows.length + ": " + rowData.code + " är redan i redigeringsläge.");
+    } else {
+      log("Rad " + (n + 1) + "/" + DATA.rows.length + ": öppnar " + rowData.code + " för redigering …");
+      ctx.win.PostBack(uid + "$_edit", "reg_value1");
+    }
     // Fill one day at a time: the change event can trigger a postback that
     // replaces the frame document, so wait for the field, set it, then wait
     // out any reload before touching the next day's field.
