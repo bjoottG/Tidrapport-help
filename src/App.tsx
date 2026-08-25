@@ -260,19 +260,37 @@ const FILL_SCRIPT_TEMPLATE = String.raw`(async function () {
     var uid = tr.id.replace(/_/g, "$");
     log("Rad " + (n + 1) + "/" + DATA.rows.length + ": öppnar " + rowData.code + " för redigering …");
     ctx.win.PostBack(uid + "$_edit", "reg_value1");
-    ctx = await waitFor(function () {
-      var c = findCtx(window);
-      if (!c) return null;
-      return c.doc.getElementsByName(uid + "$reg_value1$i")[0] ? c : null;
-    }, 20000, "redigeringsläge för rad " + rowData.code);
+    // Fill one day at a time: the change event can trigger a postback that
+    // replaces the frame document, so wait for the field, set it, then wait
+    // out any reload before touching the next day's field.
     for (var d = 0; d < 5; d++) {
-      var inp = ctx.doc.getElementsByName(uid + "$reg_value" + (d + 1) + "$i")[0];
-      if (!inp) fail("Hittar inte inmatningsfältet för dag " + (d + 1) + " på raden " + rowData.code);
+      var fieldName = uid + "$reg_value" + (d + 1) + "$i";
+      ctx = await waitFor(function () {
+        var c = findCtx(window);
+        return c && c.doc.getElementsByName(fieldName)[0] ? c : null;
+      }, 20000, "inmatningsfältet för dag " + (d + 1) + " på raden " + rowData.code);
+      var inp = ctx.doc.getElementsByName(fieldName)[0];
+      var target = parseFloat(rowData.days[d].replace(",", "."));
+      var current = parseFloat((inp.value || "0").replace(",", "."));
+      inp.style.backgroundColor = "#fef9c3";
+      if (current === target) {
+        log("  Dag " + (d + 1) + " har redan " + rowData.days[d] + " - hoppar över.");
+        continue;
+      }
+      var prevDoc = ctx.doc;
       inp.value = rowData.days[d];
-      inp.dispatchEvent(new Event("change", { bubbles: true }));
       var dirty = ctx.doc.getElementsByName(uid + "$reg_value" + (d + 1) + "$IsDirty")[0];
       if (dirty) dirty.value = "true";
-      inp.style.backgroundColor = "#fef9c3";
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
+      await sleep(400);
+      await waitFor(function () {
+        var c = findCtx(window);
+        if (!c) return null;
+        if (c.doc === prevDoc) {
+          return c.doc.getElementById("postbackOverlay") ? null : c;
+        }
+        return c.doc.getElementsByName(fieldName)[0] ? c : null;
+      }, 20000, "sidan efter ifylld dag " + (d + 1) + " på raden " + rowData.code);
     }
     log("Rad " + rowData.code + " ifylld: " + rowData.days.join("  "));
     await sleep(300);
