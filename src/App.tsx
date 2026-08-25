@@ -10,7 +10,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2, ChevronLeft, ChevronRight, ClipboardCopy, Terminal } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardCopy,
+  Terminal,
+  Bookmark,
+} from "lucide-react";
 
 interface WorkArea {
   id: string;
@@ -467,6 +475,10 @@ export default function App() {
     setTimeout(() => setCopied(""), 2500);
   }
 
+  // Bookmarklet: same fill script as a javascript: URL. Rendered via
+  // setAttribute in a ref since React 19 blocks javascript: hrefs in JSX.
+  const bookmarkletHref = "javascript:" + encodeURIComponent(buildFillScript());
+
   return (
     <div className="min-h-screen bg-background p-6 space-y-8 max-w-7xl mx-auto">
       <h1 className="text-2xl font-bold">Tidrapportering</h1>
@@ -645,6 +657,18 @@ export default function App() {
               <Terminal className="h-4 w-4 mr-1" />
               {copied === "script" ? "Kopierat!" : "Kopiera fyllnadsskript"}
             </Button>
+            <a
+              ref={(el) => {
+                if (el) el.setAttribute("href", bookmarkletHref);
+              }}
+              onClick={(e) => e.preventDefault()}
+              draggable
+              title="Dra mig till bokmärkesfältet — klicka sedan på bokmärket när du står på Unit4-sidan"
+              className="inline-flex items-center h-7 px-3 rounded-md border bg-background text-sm font-medium cursor-grab shadow-xs hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
+            >
+              <Bookmark className="h-4 w-4 mr-1" />
+              Fyll i Unit4 v.{selectedWeek} {selectedYear}
+            </a>
           </div>
         </div>
 
@@ -906,6 +930,16 @@ export default function App() {
             — annars stoppar det med ett tydligt felmeddelande och rödmarkerar problemet.
             Därefter fylls Mån–Fre i rad för rad; granska resultatet och klicka själv på
             Spara i Unit4.
+          </p>
+          <p>
+            <span className="font-semibold">Bokmärket "Fyll i Unit4":</span> dra länken
+            till webbläsarens bokmärkesfält (visa fältet med Ctrl+Skift+B). Stå sedan på
+            Daglig tidregistrering i Unit4 och klicka på bokmärket — samma fyllnadsskript
+            körs, med samma vecko- och radkontroller, utan att konsolen behöver öppnas.
+            Bokmärket innehåller veckans siffror, så dra över det på nytt varje vecka
+            (skriptet varnar om bokmärkets vecka inte matchar sidan). Obs: en fil som
+            släpps på en webbsida kan av säkerhetsskäl aldrig köra skript — bokmärket är
+            webbläsarens motsvarighet till dra-och-släpp.
           </p>
         </div>
       </div>
