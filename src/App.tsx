@@ -261,6 +261,7 @@ const FILL_SCRIPT_TEMPLATE = String.raw`(async function () {
       "\n\nLägg till raderna i Unit4 och kör skriptet igen. (Griden är rödmarkerad.)");
   }
 
+  log("Fyllnadsskript för " + DATA.weekLabel + ", skapat kl " + DATA.created + ".");
   log("Vecka OK (" + pageMonday + "), alla " + DATA.rows.length + " rader hittade. Börjar fylla i …");
 
   // 4. Fill row by row; each edit is a postback that reloads the frame
@@ -496,10 +497,20 @@ export default function App() {
       .join("\n");
   }
 
+  // Timestamp (hhmmss) for when the fill script was generated; recomputed on
+  // every render so the bookmarklet label and embedded data stay in sync.
+  const nowStamp = (() => {
+    const d = new Date();
+    return [d.getHours(), d.getMinutes(), d.getSeconds()]
+      .map((n) => String(n).padStart(2, "0"))
+      .join("");
+  })();
+
   function buildFillScript(): string {
     const payload = {
       monday: dateToKey(monday),
       weekLabel: `vecka ${selectedWeek} ${selectedYear}`,
+      created: nowStamp,
       rows: buildExportRows().map((r) => ({ code: r.code, desc: r.desc, days: r.days })),
     };
     return FILL_SCRIPT_TEMPLATE.replace("__DATA__", JSON.stringify(payload));
@@ -710,7 +721,7 @@ export default function App() {
               <Bookmark className="h-4 w-4 mr-1" />
               {copied === "bookmarklet"
                 ? "Bokmärkes-URL kopierad!"
-                : `Fyll i Unit4 v.${selectedWeek} ${selectedYear}`}
+                : `Fyll i Unit4 v.${selectedWeek} ${selectedYear} ${nowStamp}`}
             </a>
           </div>
         </div>
