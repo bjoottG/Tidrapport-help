@@ -305,7 +305,7 @@ export default function App() {
   const [friskvard, setFriskvard] = useState<number[]>([0, 0, 0, 0, 0]);
   const [franvaro, setFranvaro] = useState<number[]>([0, 0, 0, 0, 0]);
   const [flexUt, setFlexUt] = useState<number[]>([0, 0, 0, 0, 0]);
-  const [copied, setCopied] = useState<"" | "tsv" | "script">("");
+  const [copied, setCopied] = useState<"" | "tsv" | "script" | "bookmarklet">("");
 
   const monday = getMondayForISOWeek(selectedYear, selectedWeek);
   const weekDays = getWeekDays(monday);
@@ -661,13 +661,20 @@ export default function App() {
               ref={(el) => {
                 if (el) el.setAttribute("href", bookmarkletHref);
               }}
-              onClick={(e) => e.preventDefault()}
+              onClick={async (e) => {
+                e.preventDefault();
+                await navigator.clipboard.writeText(bookmarkletHref);
+                setCopied("bookmarklet");
+                setTimeout(() => setCopied(""), 2500);
+              }}
               draggable
-              title="Dra mig till bokmärkesfältet — klicka sedan på bokmärket när du står på Unit4-sidan"
+              title="Dra mig till bokmärkesfältet (inte till sidan!) — eller klicka för att kopiera bokmärkes-URL:en"
               className="inline-flex items-center h-7 px-3 rounded-md border bg-background text-sm font-medium cursor-grab shadow-xs hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
             >
               <Bookmark className="h-4 w-4 mr-1" />
-              Fyll i Unit4 v.{selectedWeek} {selectedYear}
+              {copied === "bookmarklet"
+                ? "Bokmärkes-URL kopierad!"
+                : `Fyll i Unit4 v.${selectedWeek} ${selectedYear}`}
             </a>
           </div>
         </div>
@@ -932,14 +939,17 @@ export default function App() {
             Spara i Unit4.
           </p>
           <p>
-            <span className="font-semibold">Bokmärket "Fyll i Unit4":</span> dra länken
-            till webbläsarens bokmärkesfält (visa fältet med Ctrl+Skift+B). Stå sedan på
-            Daglig tidregistrering i Unit4 och klicka på bokmärket — samma fyllnadsskript
-            körs, med samma vecko- och radkontroller, utan att konsolen behöver öppnas.
-            Bokmärket innehåller veckans siffror, så dra över det på nytt varje vecka
-            (skriptet varnar om bokmärkets vecka inte matchar sidan). Obs: en fil som
-            släpps på en webbsida kan av säkerhetsskäl aldrig köra skript — bokmärket är
-            webbläsarens motsvarighet till dra-och-släpp.
+            <span className="font-semibold">Bokmärket "Fyll i Unit4":</span> visa
+            bokmärkesfältet (Ctrl+Skift+B) och dra länken till{" "}
+            <span className="font-semibold">själva bokmärkesfältet</span> — släpper du
+            den på en webbsida eller flik försöker webbläsaren i stället öppna skriptet
+            som en sida och blockerar det ("about:blank#blocked"). Fungerar inte
+            dragningen: klicka på länken så kopieras bokmärkes-URL:en — högerklicka
+            sedan på bokmärkesfältet, välj "Lägg till sida…", ge bokmärket ett namn och
+            klistra in URL:en i webbadressfältet. Stå därefter på Daglig tidregistrering
+            i Unit4 och klicka på bokmärket — samma fyllnadsskript körs, med samma
+            vecko- och radkontroller. Bokmärket innehåller veckans siffror, så uppdatera
+            det varje vecka (skriptet varnar om bokmärkets vecka inte matchar sidan).
           </p>
         </div>
       </div>
