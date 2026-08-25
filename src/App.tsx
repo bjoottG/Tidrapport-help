@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2, ChevronLeft, ChevronRight, ClipboardCopy } from "lucide-react";
+import { Plus, Trash2, ChevronLeft, ChevronRight, ClipboardCopy, Terminal } from "lucide-react";
 
 interface WorkArea {
   id: string;
@@ -150,6 +150,132 @@ function getPreviousWeek(): { week: number; year: number } {
 // ── Year range for dropdown ───────────────────────────────
 const YEAR_RANGE = Array.from({ length: 11 }, (_, i) => 2020 + i);
 
+// ── Unit4 console fill script ─────────────────────────────
+// Generated with the week's data embedded (__DATA__) and pasted into the
+// browser console (top context) on the Unit4 "Daglig tidregistrering" page.
+// Each row edit is a WebForms postback that reloads the content frame, so the
+// script runs from the top window and re-finds the grid after every reload.
+const FILL_SCRIPT_TEMPLATE = String.raw`(async function () {
+  var DATA = __DATA__;
+  var TAG = "[Tidrapport] ";
+  function log(m) { console.log(TAG + m); }
+  function fail(m) {
+    console.error(TAG + "FEL: " + m);
+    alert("Tidrapport-exporten stoppades:\n\n" + m);
+    throw new Error(TAG + m);
+  }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function findCtx(win) {
+    try {
+      if (win.document && win.document.querySelector('th[data-fieldname="timecode"]')) {
+        return { win: win, doc: win.document };
+      }
+    } catch (e) {}
+    for (var i = 0; i < win.frames.length; i++) {
+      var r = findCtx(win.frames[i]);
+      if (r) return r;
+    }
+    return null;
+  }
+  async function waitFor(test, timeoutMs, what) {
+    var t0 = Date.now();
+    while (Date.now() - t0 < timeoutMs) {
+      var r = null;
+      try { r = test(); } catch (e) {}
+      if (r) return r;
+      await sleep(300);
+    }
+    fail("Tidsgräns nådd i väntan på: " + what);
+  }
+  function getGrid(doc) {
+    var th = doc.querySelector('th[data-fieldname="timecode"]');
+    return th ? th.closest("table") : null;
+  }
+  function colIndex(grid, field) {
+    var th = grid.querySelector('th[data-fieldname="' + field + '"]');
+    return th ? th.cellIndex : -1;
+  }
+  function findRow(grid, code) {
+    var pi = colIndex(grid, "project");
+    var rows = Array.prototype.slice.call(grid.querySelectorAll("tr"));
+    for (var i = 0; i < rows.length; i++) {
+      if (!/row\d+$/.test(rows[i].id)) continue;
+      var td = rows[i].cells[pi];
+      if (!td) continue;
+      var text = (td.textContent || "").trim();
+      var title = (td.getAttribute("title") || "").trim();
+      if (text === code || title === code || title.endsWith("- " + code)) return rows[i];
+    }
+    return null;
+  }
+
+  // 1. Find the timesheet frame
+  var ctx = findCtx(window);
+  if (!ctx) fail('Hittar inte tidregistreringsgriden på den här sidan.\n- Är du på "Daglig tidregistrering" i Unit4?\n- Körs skriptet i konsolens "top"-kontext?');
+
+  // 2. Verify the correct week is selected
+  var dateInput = ctx.doc.querySelector('input[id$="date_in_period_i"]');
+  if (!dateInput) fail("Hittar inte datumfältet (date_in_period) – sidan ser inte ut som väntat.");
+  var pageMonday = (dateInput.value || "").trim();
+  if (pageMonday !== DATA.monday) {
+    dateInput.style.outline = "3px solid red";
+    dateInput.scrollIntoView({ block: "center" });
+    fail("FEL VECKA vald i Unit4!\nSidan visar veckan som börjar " + pageMonday +
+      ", men exporten gäller " + DATA.weekLabel + " (måndag " + DATA.monday + ").\n" +
+      "Byt vecka i Unit4 och kör skriptet igen. (Datumfältet är rödmarkerat.)");
+  }
+
+  // 3. Verify every row to fill is visible in the grid
+  var grid = getGrid(ctx.doc);
+  var missing = [];
+  for (var i = 0; i < DATA.rows.length; i++) {
+    if (!findRow(grid, DATA.rows[i].code)) missing.push(DATA.rows[i]);
+  }
+  if (missing.length) {
+    grid.style.outline = "3px solid red";
+    grid.scrollIntoView({ block: "center" });
+    fail("Följande rader saknas (eller syns inte) i Unit4-griden:\n" +
+      missing.map(function (r) { return "  - " + r.code + " (" + r.desc + ")"; }).join("\n") +
+      "\n\nLägg till raderna i Unit4 och kör skriptet igen. (Griden är rödmarkerad.)");
+  }
+
+  log("Vecka OK (" + pageMonday + "), alla " + DATA.rows.length + " rader hittade. Börjar fylla i …");
+
+  // 4. Fill row by row; each edit is a postback that reloads the frame
+  for (var n = 0; n < DATA.rows.length; n++) {
+    var rowData = DATA.rows[n];
+    ctx = findCtx(window);
+    if (!ctx) fail("Tappade kontakten med sidan efter omladdning.");
+    grid = getGrid(ctx.doc);
+    var tr = findRow(grid, rowData.code);
+    if (!tr) fail("Raden " + rowData.code + " gick inte att hitta efter omladdning.");
+    var uid = tr.id.replace(/_/g, "$");
+    log("Rad " + (n + 1) + "/" + DATA.rows.length + ": öppnar " + rowData.code + " för redigering …");
+    ctx.win.PostBack(uid + "$_edit", "reg_value1");
+    ctx = await waitFor(function () {
+      var c = findCtx(window);
+      if (!c) return null;
+      return c.doc.getElementsByName(uid + "$reg_value1$i")[0] ? c : null;
+    }, 20000, "redigeringsläge för rad " + rowData.code);
+    for (var d = 0; d < 5; d++) {
+      var inp = ctx.doc.getElementsByName(uid + "$reg_value" + (d + 1) + "$i")[0];
+      if (!inp) fail("Hittar inte inmatningsfältet för dag " + (d + 1) + " på raden " + rowData.code);
+      inp.value = rowData.days[d];
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
+      var dirty = ctx.doc.getElementsByName(uid + "$reg_value" + (d + 1) + "$IsDirty")[0];
+      if (dirty) dirty.value = "true";
+      inp.style.backgroundColor = "#fef9c3";
+    }
+    log("Rad " + rowData.code + " ifylld: " + rowData.days.join("  "));
+    await sleep(300);
+  }
+
+  log("Klart!");
+  alert("Klart! " + DATA.rows.length + " rader ifyllda för " + DATA.weekLabel + ".\n\n" +
+    "Kontrollera värdena i griden och klicka sedan själv på Spara i Unit4.\n" +
+    "(Sista raden står kvar i redigeringsläge – det är normalt.)");
+})();`;
+
 export default function App() {
   const defaultWeek = getPreviousWeek();
 
@@ -171,7 +297,7 @@ export default function App() {
   const [friskvard, setFriskvard] = useState<number[]>([0, 0, 0, 0, 0]);
   const [franvaro, setFranvaro] = useState<number[]>([0, 0, 0, 0, 0]);
   const [flexUt, setFlexUt] = useState<number[]>([0, 0, 0, 0, 0]);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"" | "tsv" | "script">("");
 
   const monday = getMondayForISOWeek(selectedYear, selectedWeek);
   const weekDays = getWeekDays(monday);
@@ -293,15 +419,15 @@ export default function App() {
     setFlexUt((prev) => prev.map((v, i) => (i === idx ? value : v)));
   }
 
-  // ── Export to Unit4 (tab-separated clipboard paste) ───────
+  // ── Export to Unit4 ───────────────────────────────────────
   // Column order matches the Unit4 daily time registration grid:
   // Tidkod, Arbetsområde, Beskrivning, Mån–Sön (7 day columns).
-  function buildUnit4Tsv(): string {
+  function buildExportRows(): Array<{ tidkod: string; code: string; desc: string; days: string[] }> {
     const fmt = (n: number) => n.toFixed(2).replace(".", ",");
     const dayValues = (vals: number[]) =>
       [0, 1, 2, 3, 4].map((i) => (dayTypes[i] === "helgdag" ? 0 : vals[i]));
 
-    const rows: string[][] = [];
+    const rows: Array<{ tidkod: string; code: string; desc: string; days: string[] }> = [];
     const specialRows: Array<[string, string, number[]]> = [
       ["FRISKVAR", "Friskvård", friskvard],
       ["FRANVARO", "Frånvaro", franvaro],
@@ -310,20 +436,35 @@ export default function App() {
     specialRows.forEach(([code, desc, vals]) => {
       const days = dayValues(vals);
       if (days.every((v) => v === 0)) return;
-      rows.push(["0", code, desc, ...days.map(fmt), fmt(0), fmt(0)]);
+      rows.push({ tidkod: "0", code, desc, days: days.map(fmt) });
     });
     workAreas.forEach((area) => {
       const days = [0, 1, 2, 3, 4].map((i) => calcDayHours(area.percentage, i));
       if (days.every((v) => v === 0)) return;
-      rows.push(["0", area.code, area.description, ...days.map(fmt), fmt(0), fmt(0)]);
+      rows.push({ tidkod: "0", code: area.code, desc: area.description, days: days.map(fmt) });
     });
-    return rows.map((r) => r.join("\t")).join("\n");
+    return rows;
   }
 
-  async function copyToUnit4() {
-    await navigator.clipboard.writeText(buildUnit4Tsv());
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+  function buildUnit4Tsv(): string {
+    return buildExportRows()
+      .map((r) => [r.tidkod, r.code, r.desc, ...r.days, "0,00", "0,00"].join("\t"))
+      .join("\n");
+  }
+
+  function buildFillScript(): string {
+    const payload = {
+      monday: dateToKey(monday),
+      weekLabel: `vecka ${selectedWeek} ${selectedYear}`,
+      rows: buildExportRows().map((r) => ({ code: r.code, desc: r.desc, days: r.days })),
+    };
+    return FILL_SCRIPT_TEMPLATE.replace("__DATA__", JSON.stringify(payload));
+  }
+
+  async function copyExport(kind: "tsv" | "script") {
+    await navigator.clipboard.writeText(kind === "tsv" ? buildUnit4Tsv() : buildFillScript());
+    setCopied(kind);
+    setTimeout(() => setCopied(""), 2500);
   }
 
   return (
@@ -483,16 +624,28 @@ export default function App() {
             </Button>
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 ml-auto"
-            onClick={copyToUnit4}
-            disabled={!percentageValid}
-          >
-            <ClipboardCopy className="h-4 w-4 mr-1" />
-            {copied ? "Kopierat!" : "Kopiera till Unit4"}
-          </Button>
+          <div className="flex items-center gap-2 ml-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={() => copyExport("tsv")}
+              disabled={!percentageValid}
+            >
+              <ClipboardCopy className="h-4 w-4 mr-1" />
+              {copied === "tsv" ? "Kopierat!" : "Kopiera till Unit4"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={() => copyExport("script")}
+              disabled={!percentageValid}
+            >
+              <Terminal className="h-4 w-4 mr-1" />
+              {copied === "script" ? "Kopierat!" : "Kopiera fyllnadsskript"}
+            </Button>
+          </div>
         </div>
 
         <div className="border rounded-md overflow-x-auto">
@@ -736,12 +889,25 @@ export default function App() {
           </table>
         </div>
 
-        <p className="mt-2 text-xs text-muted-foreground">
-          <span className="font-semibold">Kopiera till Unit4:</span> klicka på knappen,
-          öppna Daglig tidregistrering i Unit4, markera första cellen (Tidkod) på en tom
-          rad i tidgriden och tryck Ctrl+V. Kolumnordning: Tidkod, Arbetsområde,
-          Beskrivning, Mån–Sön. Rader utan timmar tas inte med.
-        </p>
+        <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+          <p>
+            <span className="font-semibold">Kopiera till Unit4:</span> klicka på knappen,
+            öppna Daglig tidregistrering i Unit4, markera första cellen (Tidkod) på en tom
+            rad i tidgriden och tryck Ctrl+V. Kolumnordning: Tidkod, Arbetsområde,
+            Beskrivning, Mån–Sön. Rader utan timmar tas inte med.
+          </p>
+          <p>
+            <span className="font-semibold">Kopiera fyllnadsskript:</span> klicka på
+            knappen, öppna Daglig tidregistrering i Unit4 med rätt vecka vald och raderna
+            synliga, tryck F12 och välj fliken Console (kontext "top"), klistra in
+            skriptet och tryck Enter. Första gången kan webbläsaren kräva att du skriver{" "}
+            <code className="font-mono">allow pasting</code> i konsolen innan inklistring
+            tillåts. Skriptet kontrollerar att rätt vecka är vald och att alla rader finns
+            — annars stoppar det med ett tydligt felmeddelande och rödmarkerar problemet.
+            Därefter fylls Mån–Fre i rad för rad; granska resultatet och klicka själv på
+            Spara i Unit4.
+          </p>
+        </div>
       </div>
     </div>
   );
