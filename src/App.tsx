@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Trash2, ChevronLeft, ChevronRight, ClipboardCopy } from "lucide-react";
 
 interface WorkArea {
   id: string;
@@ -171,6 +171,7 @@ export default function App() {
   const [friskvard, setFriskvard] = useState<number[]>([0, 0, 0, 0, 0]);
   const [franvaro, setFranvaro] = useState<number[]>([0, 0, 0, 0, 0]);
   const [flexUt, setFlexUt] = useState<number[]>([0, 0, 0, 0, 0]);
+  const [copied, setCopied] = useState(false);
 
   const monday = getMondayForISOWeek(selectedYear, selectedWeek);
   const weekDays = getWeekDays(monday);
@@ -290,6 +291,39 @@ export default function App() {
 
   function updateFlexUt(idx: number, value: number) {
     setFlexUt((prev) => prev.map((v, i) => (i === idx ? value : v)));
+  }
+
+  // ── Export to Unit4 (tab-separated clipboard paste) ───────
+  // Column order matches the Unit4 daily time registration grid:
+  // Tidkod, Arbetsområde, Beskrivning, Mån–Sön (7 day columns).
+  function buildUnit4Tsv(): string {
+    const fmt = (n: number) => n.toFixed(2).replace(".", ",");
+    const dayValues = (vals: number[]) =>
+      [0, 1, 2, 3, 4].map((i) => (dayTypes[i] === "helgdag" ? 0 : vals[i]));
+
+    const rows: string[][] = [];
+    const specialRows: Array<[string, string, number[]]> = [
+      ["FRISKVAR", "Friskvård", friskvard],
+      ["FRANVARO", "Frånvaro", franvaro],
+      ["FLEXUT", "Flex uttag", flexUt],
+    ];
+    specialRows.forEach(([code, desc, vals]) => {
+      const days = dayValues(vals);
+      if (days.every((v) => v === 0)) return;
+      rows.push(["0", code, desc, ...days.map(fmt), fmt(0), fmt(0)]);
+    });
+    workAreas.forEach((area) => {
+      const days = [0, 1, 2, 3, 4].map((i) => calcDayHours(area.percentage, i));
+      if (days.every((v) => v === 0)) return;
+      rows.push(["0", area.code, area.description, ...days.map(fmt), fmt(0), fmt(0)]);
+    });
+    return rows.map((r) => r.join("\t")).join("\n");
+  }
+
+  async function copyToUnit4() {
+    await navigator.clipboard.writeText(buildUnit4Tsv());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
   }
 
   return (
@@ -448,6 +482,17 @@ export default function App() {
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 ml-auto"
+            onClick={copyToUnit4}
+            disabled={!percentageValid}
+          >
+            <ClipboardCopy className="h-4 w-4 mr-1" />
+            {copied ? "Kopierat!" : "Kopiera till Unit4"}
+          </Button>
         </div>
 
         <div className="border rounded-md overflow-x-auto">
@@ -690,6 +735,13 @@ export default function App() {
             </tbody>
           </table>
         </div>
+
+        <p className="mt-2 text-xs text-muted-foreground">
+          <span className="font-semibold">Kopiera till Unit4:</span> klicka på knappen,
+          öppna Daglig tidregistrering i Unit4, markera första cellen (Tidkod) på en tom
+          rad i tidgriden och tryck Ctrl+V. Kolumnordning: Tidkod, Arbetsområde,
+          Beskrivning, Mån–Sön. Rader utan timmar tas inte med.
+        </p>
       </div>
     </div>
   );
