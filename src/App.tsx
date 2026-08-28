@@ -2,7 +2,6 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -10,15 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Plus,
-  Trash2,
-  ChevronLeft,
-  ChevronRight,
-  ClipboardCopy,
-  Terminal,
-  Bookmark,
-} from "lucide-react";
+import { Plus, Trash2, ChevronLeft, ChevronRight, Bookmark } from "lucide-react";
 
 interface WorkArea {
   id: string;
@@ -371,7 +362,7 @@ export default function App() {
   const [friskvard, setFriskvard] = useState<number[]>([0, 0, 0, 0, 0]);
   const [franvaro, setFranvaro] = useState<number[]>([0, 0, 0, 0, 0]);
   const [flexUt, setFlexUt] = useState<number[]>([0, 0, 0, 0, 0]);
-  const [copied, setCopied] = useState<"" | "tsv" | "script" | "bookmarklet">("");
+  const [copied, setCopied] = useState<"" | "bookmarklet">("");
 
   const monday = getMondayForISOWeek(selectedYear, selectedWeek);
   const weekDays = getWeekDays(monday);
@@ -520,12 +511,6 @@ export default function App() {
     return rows;
   }
 
-  function buildUnit4Tsv(): string {
-    return buildExportRows()
-      .map((r) => [r.tidkod, r.code, r.desc, ...r.days, "0,00", "0,00"].join("\t"))
-      .join("\n");
-  }
-
   // Timestamp (hhmmss) for when the fill script was generated; recomputed on
   // every render so the bookmarklet label and embedded data stay in sync.
   const nowStamp = (() => {
@@ -543,12 +528,6 @@ export default function App() {
       rows: buildExportRows().map((r) => ({ code: r.code, desc: r.desc, days: r.days })),
     };
     return FILL_SCRIPT_TEMPLATE.replace("__DATA__", JSON.stringify(payload));
-  }
-
-  async function copyExport(kind: "tsv" | "script") {
-    await navigator.clipboard.writeText(kind === "tsv" ? buildUnit4Tsv() : buildFillScript());
-    setCopied(kind);
-    setTimeout(() => setCopied(""), 2500);
   }
 
   // Bookmarklet: same fill script as a javascript: URL. Rendered via
@@ -713,26 +692,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 ml-auto">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7"
-              onClick={() => copyExport("tsv")}
-              disabled={!percentageValid}
-            >
-              <ClipboardCopy className="h-4 w-4 mr-1" />
-              {copied === "tsv" ? "Kopierat!" : "Kopiera till Unit4"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7"
-              onClick={() => copyExport("script")}
-              disabled={!percentageValid}
-            >
-              <Terminal className="h-4 w-4 mr-1" />
-              {copied === "script" ? "Kopierat!" : "Kopiera fyllnadsskript"}
-            </Button>
             <a
               ref={(el) => {
                 if (el) el.setAttribute("href", bookmarkletHref);
@@ -750,7 +709,7 @@ export default function App() {
               <Bookmark className="h-4 w-4 mr-1" />
               {copied === "bookmarklet"
                 ? "Bokmärkes-URL kopierad!"
-                : `Fyll i Unit4 v.${selectedWeek} ${selectedYear} ${nowStamp}`}
+                : "Kopiera bokmärkesscript"}
             </a>
           </div>
         </div>
@@ -996,36 +955,57 @@ export default function App() {
           </table>
         </div>
 
-        <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+        <div className="mt-3 space-y-2 text-xs text-muted-foreground max-w-3xl">
+          <p className="font-semibold text-sm">Fylla i Unit4 med bokmärkesscriptet</p>
           <p>
-            <span className="font-semibold">Kopiera till Unit4:</span> klicka på knappen,
-            öppna Daglig tidregistrering i Unit4, markera första cellen (Tidkod) på en tom
-            rad i tidgriden och tryck Ctrl+V. Kolumnordning: Tidkod, Arbetsområde,
-            Beskrivning, Mån–Sön. Rader utan timmar tas inte med.
+            <span className="font-semibold">Förutsättningar</span> — innan du kör
+            bokmärket måste Daglig tidregistrering i Unit4 visa:
           </p>
+          <ul className="list-disc pl-5 space-y-0.5">
+            <li>
+              <span className="font-semibold">rätt vecka</span> — samma vecka som är vald
+              här i appen (vecka {selectedWeek} {selectedYear}, måndag{" "}
+              {dateToKey(monday)}), och
+            </li>
+            <li>
+              <span className="font-semibold">samma uppsättning tidkoder</span> — varje
+              rad i tabellen ovan (t.ex. FRISKVAR, FRANVARO, FLEXUT och dina
+              arbetsområdeskoder) måste finnas som rad i Unit4-griden. Saknas någon:
+              lägg till den i Unit4 först.
+            </li>
+          </ul>
           <p>
-            <span className="font-semibold">Kopiera fyllnadsskript:</span> klicka på
-            knappen, öppna Daglig tidregistrering i Unit4 med rätt vecka vald och raderna
-            synliga, tryck F12 och välj fliken Console (kontext "top"), klistra in
-            skriptet och tryck Enter. Första gången kan webbläsaren kräva att du skriver{" "}
-            <code className="font-mono">allow pasting</code> i konsolen innan inklistring
-            tillåts. Skriptet kontrollerar att rätt vecka är vald och att alla rader finns
-            — annars stoppar det med ett tydligt felmeddelande och rödmarkerar problemet.
-            Därefter fylls Mån–Fre i rad för rad; granska resultatet och klicka själv på
-            Spara i Unit4.
+            Scriptet kontrollerar båda punkterna och stoppar med ett tydligt
+            felmeddelande (och rödmarkering) om något inte stämmer.
           </p>
+          <p className="font-semibold">Lägga in bokmärket i webbläsaren, steg för steg:</p>
+          <ol className="list-decimal pl-5 space-y-0.5">
+            <li>Klicka på knappen "Kopiera bokmärkesscript" — scriptet hamnar i urklipp.</li>
+            <li>
+              Växla till webbläsaren där Unit4 körs och visa bokmärkesfältet:
+              Ctrl+Skift+B (Chrome/Edge).
+            </li>
+            <li>Högerklicka på bokmärkesfältet och välj "Lägg till sida…".</li>
+            <li>
+              Ge bokmärket ett namn, t.ex.{" "}
+              <span className="font-mono">Fyll i Unit4 v.{selectedWeek} {nowStamp}</span>.
+            </li>
+            <li>Klistra in det kopierade scriptet i URL-/webbadressfältet och spara.</li>
+            <li>
+              Öppna Daglig tidregistrering i Unit4 och kontrollera förutsättningarna
+              ovan (rätt vecka, alla tidkoder på plats).
+            </li>
+            <li>
+              Klicka på bokmärket. Scriptet fyller i Mån–Fre rad för rad — vänta tills
+              det säger klart.
+            </li>
+            <li>Granska värdena och klicka själv på Spara i Unit4.</li>
+          </ol>
           <p>
-            <span className="font-semibold">Bokmärket "Fyll i Unit4":</span> visa
-            bokmärkesfältet (Ctrl+Skift+B) och dra länken till{" "}
-            <span className="font-semibold">själva bokmärkesfältet</span> — släpper du
-            den på en webbsida eller flik försöker webbläsaren i stället öppna skriptet
-            som en sida och blockerar det ("about:blank#blocked"). Fungerar inte
-            dragningen: klicka på länken så kopieras bokmärkes-URL:en — högerklicka
-            sedan på bokmärkesfältet, välj "Lägg till sida…", ge bokmärket ett namn och
-            klistra in URL:en i webbadressfältet. Stå därefter på Daglig tidregistrering
-            i Unit4 och klicka på bokmärket — samma fyllnadsskript körs, med samma
-            vecko- och radkontroller. Bokmärket innehåller veckans siffror, så uppdatera
-            det varje vecka (skriptet varnar om bokmärkets vecka inte matchar sidan).
+            Bokmärket innehåller veckans siffror. Vid ny vecka (eller ändrade timmar):
+            klicka på "Kopiera bokmärkesscript" igen, högerklicka på bokmärket → Redigera,
+            och klistra in den nya URL:en. Fastnar scriptet: kör det igen — dagar som
+            redan är rätt ifyllda hoppas över, så det fortsätter där det slutade.
           </p>
         </div>
       </div>
