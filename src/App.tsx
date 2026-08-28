@@ -166,8 +166,15 @@ const YEAR_RANGE = Array.from({ length: 11 }, (_, i) => 2020 + i);
 const FILL_SCRIPT_TEMPLATE = String.raw`(async function () {
   var DATA = __DATA__;
   var TAG = "[Tidrapport] ";
+  var TIMEOUT = 60000;
+  if (window.__tidrapportRunning) {
+    alert("Fyllnadsskriptet kör redan – vänta tills det är klart (eller ladda om sidan om det har fastnat).");
+    return;
+  }
+  window.__tidrapportRunning = true;
   function log(m) { console.log(TAG + m); }
   function fail(m) {
+    window.__tidrapportRunning = false;
     console.error(TAG + "FEL: " + m);
     alert("Tidrapport-exporten stoppades:\n\n" + m);
     throw new Error(TAG + m);
@@ -191,9 +198,10 @@ const FILL_SCRIPT_TEMPLATE = String.raw`(async function () {
       var r = null;
       try { r = test(); } catch (e) {}
       if (r) return r;
-      await sleep(300);
+      await sleep(250);
     }
-    fail("Tidsgräns nådd i väntan på: " + what);
+    fail("Tidsgräns nådd i väntan på: " + what +
+      "\n\nSidan kan vara långsam just nu. Kör skriptet igen – dagar som redan är rätt ifyllda hoppas över, så det fortsätter där det slutade.");
   }
   function getGrid(doc) {
     var th = doc.querySelector('th[data-fieldname="timecode"]');
@@ -227,6 +235,21 @@ const FILL_SCRIPT_TEMPLATE = String.raw`(async function () {
       for (var j = 0; j < inputs.length; j++) {
         if ((inputs[j].value || "").trim() === code) return rows[i];
       }
+    }
+    return null;
+  }
+  // Find the edit-mode input for a given day INSIDE the row found by code.
+  // Row ids are positional (row0, row1 …) and the grid can re-sort between
+  // postbacks, so field names must never be derived from a stale row id.
+  function dayInput(c, code, dnum) {
+    var g = getGrid(c.doc);
+    if (!g) return null;
+    var row = findRow(g, code);
+    if (!row) return null;
+    var suffix = "$reg_value" + dnum + "$i";
+    var inputs = row.querySelectorAll("input");
+    for (var j = 0; j < inputs.length; j++) {
+      if ((inputs[j].name || "").endsWith(suffix)) return inputs[j];
     }
     return null;
   }
@@ -264,31 +287,36 @@ const FILL_SCRIPT_TEMPLATE = String.raw`(async function () {
   log("Fyllnadsskript för " + DATA.weekLabel + ", skapat kl " + DATA.created + ".");
   log("Vecka OK (" + pageMonday + "), alla " + DATA.rows.length + " rader hittade. Börjar fylla i …");
 
-  // 4. Fill row by row; each edit is a postback that reloads the frame
+  // 4. Fill row by row, one day at a time. Every day is self-healing: wait
+  // until the page is idle, re-locate the row, re-open edit mode if the row
+  // has fallen back to display mode, fill the field, then wait out any
+  // postback before the next day. Days already holding the right value are
+  // skipped, so re-running the script continues where it stopped.
   for (var n = 0; n < DATA.rows.length; n++) {
     var rowData = DATA.rows[n];
-    ctx = findCtx(window);
-    if (!ctx) fail("Tappade kontakten med sidan efter omladdning.");
-    grid = getGrid(ctx.doc);
-    var tr = findRow(grid, rowData.code);
-    if (!tr) fail("Raden " + rowData.code + " gick inte att hitta efter omladdning.");
-    var uid = tr.id.replace(/_/g, "$");
-    if (ctx.doc.getElementsByName(uid + "$reg_value1$i")[0]) {
-      log("Rad " + (n + 1) + "/" + DATA.rows.length + ": " + rowData.code + " är redan i redigeringsläge.");
-    } else {
-      log("Rad " + (n + 1) + "/" + DATA.rows.length + ": öppnar " + rowData.code + " för redigering …");
-      ctx.win.PostBack(uid + "$_edit", "reg_value1");
-    }
-    // Fill one day at a time: the change event can trigger a postback that
-    // replaces the frame document, so wait for the field, set it, then wait
-    // out any reload before touching the next day's field.
+    log("Rad " + (n + 1) + "/" + DATA.rows.length + ": " + rowData.code + " …");
     for (var d = 0; d < 5; d++) {
-      var fieldName = uid + "$reg_value" + (d + 1) + "$i";
+      // Wait until the page is idle (grid rendered, no postback overlay)
       ctx = await waitFor(function () {
         var c = findCtx(window);
-        return c && c.doc.getElementsByName(fieldName)[0] ? c : null;
-      }, 20000, "inmatningsfältet för dag " + (d + 1) + " på raden " + rowData.code);
-      var inp = ctx.doc.getElementsByName(fieldName)[0];
+        return c && getGrid(c.doc) && !c.doc.getElementById("postbackOverlay") ? c : null;
+      }, TIMEOUT, "att sidan ska bli klar (rad " + rowData.code + ", dag " + (d + 1) + ")");
+      grid = getGrid(ctx.doc);
+      var tr = findRow(grid, rowData.code);
+      if (!tr) fail("Raden " + rowData.code + " gick inte att hitta efter omladdning.");
+      // Ensure the row is in edit mode with this day's field present.
+      // The edit postback uses the row's CURRENT id; afterwards the field is
+      // re-located inside the row found by code, since the grid may re-sort
+      // and renumber the rows between postbacks.
+      var inp = dayInput(ctx, rowData.code, d + 1);
+      if (!inp) {
+        ctx.win.PostBack(tr.id.replace(/_/g, "$") + "$_edit", "reg_value" + (d + 1));
+        ctx = await waitFor(function () {
+          var c = findCtx(window);
+          return c && dayInput(c, rowData.code, d + 1) ? c : null;
+        }, TIMEOUT, "redigeringsläge för rad " + rowData.code + ", dag " + (d + 1));
+        inp = dayInput(ctx, rowData.code, d + 1);
+      }
       var target = parseFloat(rowData.days[d].replace(",", "."));
       var current = parseFloat((inp.value || "0").replace(",", "."));
       inp.style.backgroundColor = "#fef9c3";
@@ -298,9 +326,11 @@ const FILL_SCRIPT_TEMPLATE = String.raw`(async function () {
       }
       var prevDoc = ctx.doc;
       inp.value = rowData.days[d];
-      var dirty = ctx.doc.getElementsByName(uid + "$reg_value" + (d + 1) + "$IsDirty")[0];
+      var dirty = ctx.doc.getElementsByName(inp.name.slice(0, -2) + "$IsDirty")[0];
       if (dirty) dirty.value = "true";
       inp.dispatchEvent(new Event("change", { bubbles: true }));
+      // The change can trigger a postback; wait until it is fully done
+      // (same document without overlay, or a new document with the grid back)
       await sleep(400);
       await waitFor(function () {
         var c = findCtx(window);
@@ -308,11 +338,10 @@ const FILL_SCRIPT_TEMPLATE = String.raw`(async function () {
         if (c.doc === prevDoc) {
           return c.doc.getElementById("postbackOverlay") ? null : c;
         }
-        return c.doc.getElementsByName(fieldName)[0] ? c : null;
-      }, 20000, "sidan efter ifylld dag " + (d + 1) + " på raden " + rowData.code);
+        return getGrid(c.doc) ? c : null;
+      }, TIMEOUT, "sidan efter ifylld dag " + (d + 1) + " på raden " + rowData.code);
     }
     log("Rad " + rowData.code + " ifylld: " + rowData.days.join("  "));
-    await sleep(300);
   }
 
   log("Klart!");
