@@ -530,6 +530,10 @@ export default function App() {
     return FILL_SCRIPT_TEMPLATE.replace("__DATA__", JSON.stringify(payload));
   }
 
+  // Rows that will actually be exported (only rows with hours this week);
+  // also drives the dynamic prerequisites text below the table.
+  const exportRows = buildExportRows();
+
   // Bookmarklet: same fill script as a javascript: URL. Rendered via
   // setAttribute in a ref since React 19 blocks javascript: hrefs in JSX.
   const bookmarkletHref = "javascript:" + encodeURIComponent(buildFillScript());
@@ -968,10 +972,25 @@ export default function App() {
               {dateToKey(monday)}), och
             </li>
             <li>
-              <span className="font-semibold">samma uppsättning tidkoder</span> — varje
-              rad i tabellen ovan (t.ex. FRISKVAR, FRANVARO, FLEXUT och dina
-              arbetsområdeskoder) måste finnas som rad i Unit4-griden. Saknas någon:
-              lägg till den i Unit4 först.
+              <span className="font-semibold">tidkoderna med ifyllda timmar</span> —
+              bara rader som har timmar denna vecka måste finnas som rader i
+              Unit4-griden.{" "}
+              {exportRows.length > 0 ? (
+                <>
+                  Just nu gäller det:{" "}
+                  <span className="font-mono">
+                    {exportRows.map((r) => r.code).join(", ")}
+                  </span>
+                  . Saknas någon av dessa: lägg till den i Unit4 först.
+                </>
+              ) : (
+                <>Just nu har ingen rad några timmar, så inget krävs ännu.</>
+              )}{" "}
+              Rader med 0 timmar (t.ex.{" "}
+              {["FRISKVAR", "FRANVARO", "FLEXUT"]
+                .filter((c) => !exportRows.some((r) => r.code === c))
+                .join(", ") || "inga just nu"}
+              ) tas inte med av scriptet och behöver inte vara synliga i Unit4.
             </li>
           </ul>
           <p>
