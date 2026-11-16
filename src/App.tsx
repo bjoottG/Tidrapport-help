@@ -363,6 +363,7 @@ export default function App() {
   });
   const [friskvard, setFriskvard] = useState<number[]>([0, 0, 0, 0, 0]);
   const [franvaro, setFranvaro] = useState<number[]>([0, 0, 0, 0, 0]);
+  const [kompetens, setKompetens] = useState<number[]>([0, 0, 0, 0, 0]);
   const [copied, setCopied] = useState<"" | "bookmarklet">("");
 
   const monday = getMondayForISOWeek(selectedYear, selectedWeek);
@@ -380,6 +381,7 @@ export default function App() {
     setWorkedHours(newTypes.map((t) => DAY_BASE_HOURS[t]));
     setFriskvard([0, 0, 0, 0, 0]);
     setFranvaro([0, 0, 0, 0, 0]);
+    setKompetens([0, 0, 0, 0, 0]);
   }
 
   function navigateWeek(delta: number) {
@@ -414,11 +416,15 @@ export default function App() {
     (s, v, i) => s + (dayTypes[i] === "helgdag" ? 0 : v),
     0
   );
+  const kompetensTotal = kompetens.reduce(
+    (s, v, i) => s + (dayTypes[i] === "helgdag" ? 0 : v),
+    0
+  );
 
   function calcDayHours(percentage: number, dayIdx: number): number {
     const available = Math.max(
       0,
-      workedHours[dayIdx] - friskvard[dayIdx] - franvaro[dayIdx]
+      workedHours[dayIdx] - friskvard[dayIdx] - franvaro[dayIdx] - kompetens[dayIdx]
     );
     return available * (percentage / 100);
   }
@@ -432,7 +438,8 @@ export default function App() {
     if (dayTypes[i] === "helgdag") return 0;
     return workAreas.reduce((s, wa) => s + calcDayHours(wa.percentage, i), 0) +
       friskvard[i] +
-      franvaro[i];
+      franvaro[i] +
+      kompetens[i];
   });
   const grandTotal = dayTotals.reduce((s, v) => s + v, 0);
 
@@ -474,6 +481,10 @@ export default function App() {
     setFranvaro((prev) => prev.map((v, i) => (i === idx ? value : v)));
   }
 
+  function updateKompetens(idx: number, value: number) {
+    setKompetens((prev) => prev.map((v, i) => (i === idx ? value : v)));
+  }
+
   // ── Export to Unit4 ───────────────────────────────────────
   // Column order matches the Unit4 daily time registration grid:
   // Tidkod, Arbetsområde, Beskrivning, Mån–Sön (7 day columns).
@@ -486,6 +497,7 @@ export default function App() {
     const specialRows: Array<[string, string, number[]]> = [
       ["FRISKVAR", "Friskvård", friskvard],
       ["FRANVARO", "Frånvaro", franvaro],
+      ["100010", "Kompetensutveckling (99)", kompetens],
     ];
     specialRows.forEach(([code, desc, vals]) => {
       const days = dayValues(vals);
@@ -871,6 +883,39 @@ export default function App() {
                 </td>
               </tr>
 
+              {/* Kompetensutveckling */}
+              <tr className="border-b">
+                <td className="px-3 py-1 text-muted-foreground">0</td>
+                <td className="px-3 py-1 font-mono text-xs">100010</td>
+                <td className="px-3 py-1">Kompetensutveckling (99)</td>
+                {kompetens.map((v, i) => (
+                  <td
+                    key={i}
+                    className={cn(
+                      "px-1 py-1",
+                      dayTypes[i] === "helgdag" && "bg-green-500",
+                      dayTypes[i] === "halvHelgdag" && "bg-amber-50"
+                    )}
+                  >
+                    {dayTypes[i] === "helgdag" ? (
+                      <div className="text-right px-2 text-sm font-mono text-white">0,00</div>
+                    ) : (
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.25}
+                        value={v}
+                        onChange={(e) => updateKompetens(i, Number(e.target.value))}
+                        className="h-7 text-right w-full font-mono text-xs"
+                      />
+                    )}
+                  </td>
+                ))}
+                <td className="px-3 py-1 text-right font-mono text-sm">
+                  {kompetensTotal.toFixed(2).replace(".", ",")}
+                </td>
+              </tr>
+
               {/* Work area rows */}
               {workAreas.map((area) => {
                 const dayHours = [0, 1, 2, 3, 4].map((i) => calcDayHours(area.percentage, i));
@@ -952,7 +997,7 @@ export default function App() {
                 <>Just nu har ingen rad några timmar, så inget krävs ännu.</>
               )}{" "}
               Rader med 0 timmar (t.ex.{" "}
-              {["FRISKVAR", "FRANVARO"]
+              {["FRISKVAR", "FRANVARO", "100010"]
                 .filter((c) => !exportRows.some((r) => r.code === c))
                 .join(", ") || "inga just nu"}
               ) tas inte med av scriptet och behöver inte vara synliga i Unit4.
