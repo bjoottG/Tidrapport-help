@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2, ChevronLeft, ChevronRight, Bookmark } from "lucide-react";
+import { Plus, Trash2, ChevronLeft, ChevronRight, Bookmark, GripVertical } from "lucide-react";
 
 interface WorkArea {
   id: string;
@@ -338,7 +338,9 @@ const FILL_SCRIPT_TEMPLATE = String.raw`(async function () {
   log("Klart!");
   alert("Klart! " + DATA.rows.length + " rader ifyllda för " + DATA.weekLabel + ".\n\n" +
     "Kontrollera värdena i griden och klicka sedan själv på Spara i Unit4.\n" +
-    "(Sista raden står kvar i redigeringsläge – det är normalt.)");
+    "(Sista raden står kvar i redigeringsläge – det är normalt.)\n\n" +
+    "Bokmärket \"" + DATA.bookmarkName + "\" gäller bara den här veckan. " +
+    "Högerklicka på det i bokmärkesfältet → Ta bort, när du har sparat.");
 })();`;
 
 export default function App() {
@@ -361,7 +363,6 @@ export default function App() {
   });
   const [friskvard, setFriskvard] = useState<number[]>([0, 0, 0, 0, 0]);
   const [franvaro, setFranvaro] = useState<number[]>([0, 0, 0, 0, 0]);
-  const [flexUt, setFlexUt] = useState<number[]>([0, 0, 0, 0, 0]);
   const [copied, setCopied] = useState<"" | "bookmarklet">("");
 
   const monday = getMondayForISOWeek(selectedYear, selectedWeek);
@@ -379,7 +380,6 @@ export default function App() {
     setWorkedHours(newTypes.map((t) => DAY_BASE_HOURS[t]));
     setFriskvard([0, 0, 0, 0, 0]);
     setFranvaro([0, 0, 0, 0, 0]);
-    setFlexUt([0, 0, 0, 0, 0]);
   }
 
   function navigateWeek(delta: number) {
@@ -418,15 +418,10 @@ export default function App() {
   function calcDayHours(percentage: number, dayIdx: number): number {
     const available = Math.max(
       0,
-      workedHours[dayIdx] - friskvard[dayIdx] - franvaro[dayIdx] - flexUt[dayIdx]
+      workedHours[dayIdx] - friskvard[dayIdx] - franvaro[dayIdx]
     );
     return available * (percentage / 100);
   }
-
-  const flexTotal = flexUt.reduce(
-    (s, v, i) => s + (dayTypes[i] === "helgdag" ? 0 : v),
-    0
-  );
 
   const workedTotal = workedHours.reduce(
     (s, v, i) => s + (dayTypes[i] === "helgdag" ? 0 : v),
@@ -437,8 +432,7 @@ export default function App() {
     if (dayTypes[i] === "helgdag") return 0;
     return workAreas.reduce((s, wa) => s + calcDayHours(wa.percentage, i), 0) +
       friskvard[i] +
-      franvaro[i] +
-      flexUt[i];
+      franvaro[i];
   });
   const grandTotal = dayTotals.reduce((s, v) => s + v, 0);
 
@@ -480,10 +474,6 @@ export default function App() {
     setFranvaro((prev) => prev.map((v, i) => (i === idx ? value : v)));
   }
 
-  function updateFlexUt(idx: number, value: number) {
-    setFlexUt((prev) => prev.map((v, i) => (i === idx ? value : v)));
-  }
-
   // ── Export to Unit4 ───────────────────────────────────────
   // Column order matches the Unit4 daily time registration grid:
   // Tidkod, Arbetsområde, Beskrivning, Mån–Sön (7 day columns).
@@ -496,7 +486,6 @@ export default function App() {
     const specialRows: Array<[string, string, number[]]> = [
       ["FRISKVAR", "Friskvård", friskvard],
       ["FRANVARO", "Frånvaro", franvaro],
-      ["FLEXUT", "Flex uttag", flexUt],
     ];
     specialRows.forEach(([code, desc, vals]) => {
       const days = dayValues(vals);
@@ -520,11 +509,16 @@ export default function App() {
       .join("");
   })();
 
+  // Name the bookmark gets when the link is dropped on the bookmarks bar
+  // (browsers use the link text as the bookmark title).
+  const bookmarkName = `Tidrapport v.${selectedWeek}`;
+
   function buildFillScript(): string {
     const payload = {
       monday: dateToKey(monday),
       weekLabel: `vecka ${selectedWeek} ${selectedYear}`,
       created: nowStamp,
+      bookmarkName,
       rows: buildExportRows().map((r) => ({ code: r.code, desc: r.desc, days: r.days })),
     };
     return FILL_SCRIPT_TEMPLATE.replace("__DATA__", JSON.stringify(payload));
@@ -696,6 +690,11 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 ml-auto">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {copied === "bookmarklet"
+                ? "Bokmärkes-URL kopierad!"
+                : "Dra till bokmärkesfältet →"}
+            </span>
             <a
               ref={(el) => {
                 if (el) el.setAttribute("href", bookmarkletHref);
@@ -708,12 +707,11 @@ export default function App() {
               }}
               draggable
               title="Dra mig till bokmärkesfältet (inte till sidan!) — eller klicka för att kopiera bokmärkes-URL:en"
-              className="inline-flex items-center h-7 px-3 rounded-md border bg-background text-sm font-medium cursor-grab shadow-xs hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
+              className="inline-flex items-center h-7 px-3 rounded-md border bg-background text-sm font-medium cursor-grab active:cursor-grabbing shadow-xs hover:bg-accent hover:text-accent-foreground whitespace-nowrap"
             >
+              <GripVertical className="h-4 w-4 mr-1 text-muted-foreground" />
               <Bookmark className="h-4 w-4 mr-1" />
-              {copied === "bookmarklet"
-                ? "Bokmärkes-URL kopierad!"
-                : "Kopiera bokmärkesscript"}
+              {bookmarkName}
             </a>
           </div>
         </div>
@@ -873,39 +871,6 @@ export default function App() {
                 </td>
               </tr>
 
-              {/* Flex uttag */}
-              <tr className="border-b">
-                <td className="px-3 py-1 text-muted-foreground">0</td>
-                <td className="px-3 py-1 font-mono text-xs">FLEXUT</td>
-                <td className="px-3 py-1">Flex uttag</td>
-                {flexUt.map((v, i) => (
-                  <td
-                    key={i}
-                    className={cn(
-                      "px-1 py-1",
-                      dayTypes[i] === "helgdag" && "bg-green-500",
-                      dayTypes[i] === "halvHelgdag" && "bg-amber-50"
-                    )}
-                  >
-                    {dayTypes[i] === "helgdag" ? (
-                      <div className="text-right px-2 text-sm font-mono text-white">0,00</div>
-                    ) : (
-                      <Input
-                        type="number"
-                        min={0}
-                        step={0.25}
-                        value={v}
-                        onChange={(e) => updateFlexUt(i, Number(e.target.value))}
-                        className="h-7 text-right w-full font-mono text-xs"
-                      />
-                    )}
-                  </td>
-                ))}
-                <td className="px-3 py-1 text-right font-mono text-sm">
-                  {flexTotal.toFixed(2).replace(".", ",")}
-                </td>
-              </tr>
-
               {/* Work area rows */}
               {workAreas.map((area) => {
                 const dayHours = [0, 1, 2, 3, 4].map((i) => calcDayHours(area.percentage, i));
@@ -987,7 +952,7 @@ export default function App() {
                 <>Just nu har ingen rad några timmar, så inget krävs ännu.</>
               )}{" "}
               Rader med 0 timmar (t.ex.{" "}
-              {["FRISKVAR", "FRANVARO", "FLEXUT"]
+              {["FRISKVAR", "FRANVARO"]
                 .filter((c) => !exportRows.some((r) => r.code === c))
                 .join(", ") || "inga just nu"}
               ) tas inte med av scriptet och behöver inte vara synliga i Unit4.
@@ -999,17 +964,15 @@ export default function App() {
           </p>
           <p className="font-semibold">Lägga in bokmärket i webbläsaren, steg för steg:</p>
           <ol className="list-decimal pl-5 space-y-0.5">
-            <li>Klicka på knappen "Kopiera bokmärkesscript" — scriptet hamnar i urklipp.</li>
             <li>
-              Växla till webbläsaren där Unit4 körs och visa bokmärkesfältet:
-              Ctrl+Skift+B (Chrome/Edge).
+              Visa bokmärkesfältet i webbläsaren: Ctrl+Skift+B (Chrome/Edge/Firefox),
+              Cmd+Skift+B på Mac.
             </li>
-            <li>Högerklicka på bokmärkesfältet och välj "Lägg till sida…".</li>
             <li>
-              Ge bokmärket ett namn, t.ex.{" "}
-              <span className="font-mono">Fyll i Unit4 v.{selectedWeek} {nowStamp}</span>.
+              Dra knappen <span className="font-mono">{bookmarkName}</span> uppe till
+              höger och släpp den på bokmärkesfältet (inte på sidan). Bokmärket får
+              namnet <span className="font-mono">{bookmarkName}</span>.
             </li>
-            <li>Klistra in det kopierade scriptet i URL-/webbadressfältet och spara.</li>
             <li>
               Öppna Daglig tidregistrering i Unit4 och kontrollera förutsättningarna
               ovan (rätt vecka, alla tidkoder på plats).
@@ -1019,12 +982,22 @@ export default function App() {
               det säger klart.
             </li>
             <li>Granska värdena och klicka själv på Spara i Unit4.</li>
+            <li>
+              Ta bort bokmärket när du har sparat: högerklicka på det i
+              bokmärkesfältet → Ta bort.
+            </li>
           </ol>
           <p>
             Bokmärket innehåller veckans siffror. Vid ny vecka (eller ändrade timmar):
-            klicka på "Kopiera bokmärkesscript" igen, högerklicka på bokmärket → Redigera,
-            och klistra in den nya URL:en. Fastnar scriptet: kör det igen — dagar som
-            redan är rätt ifyllda hoppas över, så det fortsätter där det slutade.
+            dra knappen till bokmärkesfältet igen, så får du ett nytt bokmärke. Fastnar
+            scriptet: kör det igen — dagar som redan är rätt ifyllda hoppas över, så det
+            fortsätter där det slutade.
+          </p>
+          <p>
+            Går det inte att dra (t.ex. på en låst jobbdator)? Klicka på knappen i
+            stället — då kopieras bokmärkes-URL:en. Högerklicka på bokmärkesfältet →
+            "Lägg till sida…", döp det till{" "}
+            <span className="font-mono">{bookmarkName}</span> och klistra in URL:en.
           </p>
         </div>
       </div>
